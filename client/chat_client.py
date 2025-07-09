@@ -1,6 +1,7 @@
 import socket
 import threading
 import argparse
+import json
 
 class ChatClient:
 
@@ -45,6 +46,12 @@ class ChatClient:
             self.sock.connect((self.host, self.port))
             self.running = True  # 接続成功フラグを立てる
             print(f"Connected to {self.host}:{self.port} as {self.name}")
+
+            init_data = {
+                "user_name": self.name,
+                "message": f"{self.name}が接続しました。"
+            }
+            self.sock.send(json.dumps(init_data).encode('utf-8'))
         except Exception as e:
             print(f"Connection failed: {e}")
             self.running = False  # 接続失敗フラグ
@@ -74,7 +81,11 @@ class ChatClient:
                     break
                 
                 message = f"[{self.name}] {user_input}"
-                sent = self.sock.send(message.encode('utf-8'))
+                data = {
+                    "user_name": self.name,
+                    "message": message
+                }
+                self.sock.send(json.dumps(data).encode('utf-8'))
             except KeyboardInterrupt:
                 print("切断します")
                 break
