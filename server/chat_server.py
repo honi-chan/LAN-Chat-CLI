@@ -1,6 +1,7 @@
 import socket
 import threading
 import argparse
+import json
 
 class ChatServer:
     
@@ -48,32 +49,68 @@ class ChatServer:
 
     # 新しいクライアントの処理を開始
     def _handle_new_client(self, conn, addr):
-        self.clients.append((conn, addr))  # クライアント情報をリストに追加
+        user_name = 'unknown'
+        self.clients.append([conn, addr, user_name])  # クライアント情報をリストに追加
         thread = threading.Thread(target=self._client_handler, args=(conn, addr), daemon=True)  # クライアント処理用スレッド作成
         thread.start()  # スレッド開始
+        
+    # クライアントの名前を紐づけする
+    def _register_client_name(self, user_name, connection):
+        new_list = []
+        for c in self.clients:
+            if c[0] == connection:
+                c[2] = user_name
+            new_list.append(c)
+        self.clients = new_list
 
     def _client_handler(self, connection, address):
         while True:  # クライアントからのメッセージ受信ループ
             try:
                 data = connection.recv(4096)  # データを受信（最大4096バイト）
+
                 if not data:  # データが空なら切断されたと判断
+                    self._broadcast_exit_message(connection)
                     self._remove_client(connection, address)
                     break
-                self._broadcast_message(data, address)
+
+                data = json.loads(data.decode())
+                self._register_client_name(data['user_name'], connection)
+                self._broadcast_message(data['message'], address)
             except Exception as e:
                 print(f"Error with client {address}: {e}")
+                self._broadcast_exit_message(connection)
                 self._remove_client(connection, address)
                 break
 
     # 受信メッセージを他クライアントへ送信
     def _broadcast_message(self, data, sender_addr):
-        message = f"{data.decode()}".encode("utf-8")
-        for conn, addr in self.clients:
+        message = f"{data}".encode("utf-8")
+        for conn, addr, user_name in self.clients:
             if addr != sender_addr:  # 送信元以外に送信
                 try:
                     conn.send(message)  # メッセージ送信
                 except Exception as e:
                     print(f"送信エラー: {e}")  # 送信失敗時のエラーメッセージ
+    
+    # 退出メッセージを他クライアントへ送信
+    def _broadcast_exit_message(self, connection):
+        exit_user_name = ''
+        exit_addr = ''
+
+        for conn, addr, user_name in self.clients:
+            if conn == connection:
+                exit_user_name = user_name
+                exit_addr = addr
+        
+        message = f"[Server] {exit_user_name} がチャットを退出しました。".encode("utf-8")
+
+        for conn, addr, user_name in self.clients:
+            if addr != exit_addr:  # 退出者以外に送信
+                try:
+                    conn.send(message)  # メッセージ送信
+                except Exception as e:
+                    print(f"送信エラー: {e}")  # 送信失敗時のエラーメッセージ
+
 
     # クライアント情報をリストから削除
     def _remove_client(self, connection, address):
